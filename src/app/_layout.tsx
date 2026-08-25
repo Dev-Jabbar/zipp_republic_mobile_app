@@ -1,18 +1,50 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
-import * as SplashScreen from 'expo-splash-screen';
-import { useColorScheme } from 'react-native';
+import { Stack } from "expo-router";
+import { StatusBar } from "expo-status-bar";
+import { StyleSheet, View } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
+import {
+  SafeAreaProvider,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 
-import { AnimatedSplashOverlay } from '@/components/animated-icon';
-import AppTabs from '@/components/app-tabs';
+const RootLayoutContent = () => {
+  const insets = useSafeAreaInsets();
 
-SplashScreen.preventAutoHideAsync();
-
-export default function TabLayout() {
-  const colorScheme = useColorScheme();
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <AnimatedSplashOverlay />
-      <AppTabs />
-    </ThemeProvider>
+    <View
+      style={[
+        styles.container,
+        { paddingTop: insets.top, paddingBottom: insets.bottom },
+      ]}
+    >
+      <StatusBar style="light" />
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="(shop)" />
+        <Stack.Screen name="(auth)" />
+      </Stack>
+    </View>
   );
-}
+};
+
+const RootLayout = () => {
+  return (
+    // GestureHandlerRootView MUST be the outermost wrapper (above
+    // SafeAreaProvider), or every gesture-handler-based component
+    // (this slider, swipeables, native-stack transitions, etc.) will
+    // render fine but silently ignore all touches — no error, no
+    // warning, gestures just do nothing.
+    <GestureHandlerRootView style={styles.container}>
+      <SafeAreaProvider>
+        <RootLayoutContent />
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
+  );
+};
+
+export default RootLayout;
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+});

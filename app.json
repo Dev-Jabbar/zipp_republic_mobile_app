@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "zipp_republic_app",
+    "name": "Zipp Republic",
     "slug": "zipp_republic_app",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -32,7 +32,9 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
         }
-      ]
+      ],
+      "expo-image",
+      "expo-video"
     ],
     "experiments": {
       "typedRoutes": true,
