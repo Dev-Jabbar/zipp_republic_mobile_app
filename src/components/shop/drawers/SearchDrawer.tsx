@@ -2,6 +2,7 @@ import { Brand } from "@/constants/theme";
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   FlatList,
   StyleSheet,
   Text,
@@ -15,9 +16,15 @@ interface SearchDrawerProps {
   visible: boolean;
   onClose: () => void;
   onSubmit?: (query: string) => void;
+
+  onQueryChange?: (query: string) => void;
   /** Optional list of result rows to render below the input, e.g. product hits. */
   results?: { id: string; label: string }[];
   onResultPress?: (id: string) => void;
+  /** True while the parent's search is in flight — shows a small spinner
+   * instead of "No results" so a genuinely-empty result isn't confused
+   * with a still-loading one. */
+  loading?: boolean;
   /** Height of the AnnouncementBar + Header block above this drawer, so the
    * input starts right below it instead of hiding underneath it. */
   topInset?: number;
@@ -27,8 +34,10 @@ const SearchDrawer = ({
   visible,
   onClose,
   onSubmit,
+  onQueryChange,
   results = [],
   onResultPress,
+  loading = false,
   topInset = 0,
 }: SearchDrawerProps) => {
   const [query, setQuery] = useState("");
@@ -37,6 +46,14 @@ const SearchDrawer = ({
   useEffect(() => {
     if (!visible) setQuery("");
   }, [visible]);
+
+  const handleChangeText = (text: string) => {
+    setQuery(text);
+    onQueryChange?.(text);
+  };
+
+  const showEmptyState =
+    !loading && query.trim() !== "" && results.length === 0;
 
   return (
     <DrawerShell
@@ -49,7 +66,7 @@ const SearchDrawer = ({
         <TextInput
           ref={inputRef}
           value={query}
-          onChangeText={setQuery}
+          onChangeText={handleChangeText}
           onSubmitEditing={() => onSubmit?.(query)}
           placeholder="Search for anything"
           placeholderTextColor={Brand.text + "80"}
@@ -57,31 +74,43 @@ const SearchDrawer = ({
           returnKeyType="search"
           autoCorrect={false}
         />
-        <TouchableOpacity onPress={onClose} hitSlop={10}>
-          <Ionicons name="close" size={24} color={Brand.text} />
-        </TouchableOpacity>
-      </View>
-
-      <FlatList
-        data={results}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.resultsContent}
-        keyboardShouldPersistTaps="handled"
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            style={styles.resultRow}
-            onPress={() => onResultPress?.(item.id)}
-          >
-            <Ionicons
-              name="search-outline"
-              size={16}
-              color={Brand.text}
-              style={{ opacity: 0.5 }}
-            />
-            <Text style={styles.resultLabel}>{item.label}</Text>
+        {loading ? (
+          <ActivityIndicator size="small" color={Brand.text} />
+        ) : (
+          <TouchableOpacity onPress={onClose} hitSlop={10}>
+            <Ionicons name="close" size={24} color={Brand.text} />
           </TouchableOpacity>
         )}
-      />
+      </View>
+
+      {showEmptyState ? (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyText}>
+            No products found for &quot;{query.trim()}&quot;.
+          </Text>
+        </View>
+      ) : (
+        <FlatList
+          data={results}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.resultsContent}
+          keyboardShouldPersistTaps="handled"
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              style={styles.resultRow}
+              onPress={() => onResultPress?.(item.id)}
+            >
+              <Ionicons
+                name="search-outline"
+                size={16}
+                color={Brand.text}
+                style={{ opacity: 0.5 }}
+              />
+              <Text style={styles.resultLabel}>{item.label}</Text>
+            </TouchableOpacity>
+          )}
+        />
+      )}
     </DrawerShell>
   );
 };
@@ -120,5 +149,15 @@ const styles = StyleSheet.create({
   resultLabel: {
     fontSize: 14,
     color: Brand.text,
+  },
+  emptyState: {
+    paddingHorizontal: 20,
+    paddingTop: 32,
+    alignItems: "center",
+  },
+  emptyText: {
+    fontSize: 13,
+    color: Brand.textSecondary,
+    textAlign: "center",
   },
 });

@@ -10,6 +10,7 @@ import {
   useCollectionFilters,
 } from "@/hooks/shops/useCollectionFilters";
 import { useCollectionProducts } from "@/hooks/shops/useCollectionProducts";
+import { useGoToProduct } from "@/hooks/shops/useGoToProduct";
 import { useHeaderMeasurementStore } from "@/store/useHeaderMeasurementStore";
 import { useLocalSearchParams } from "expo-router";
 import { useMemo, useState } from "react";
@@ -21,6 +22,7 @@ const CollectionScreen = () => {
   const { slug } = useLocalSearchParams<{ slug: string }>();
   const headerHeight = useHeaderMeasurementStore((s) => s.headerHeight);
   const [filterVisible, setFilterVisible] = useState(false);
+  const goToProduct = useGoToProduct();
 
   // 1. Filter STATE — doesn't need priceBounds, so no ordering problem.
   const { appliedFilters, applyFilters, removeChip, clearAll } =
@@ -36,6 +38,11 @@ const CollectionScreen = () => {
       sortBy: appliedFilters.sortBy,
     });
 
+  // 3. DERIVED display values — now that both appliedFilters AND
+  // priceBounds are available, compute the values the drawer/header
+  // actually need to render. Plain function calls, not hooks — no
+  // circular dependency between useCollectionFilters and
+  // useCollectionProducts.
   const drawerFilters = getDrawerFilters(appliedFilters, priceBounds);
   const chips = useMemo(
     () => getChips(appliedFilters, priceBounds),
@@ -94,6 +101,7 @@ const CollectionScreen = () => {
                 category={item.category}
                 colors={item.colors}
                 fullWidth
+                onPress={() => goToProduct(item.id)}
               />
             </View>
           )}

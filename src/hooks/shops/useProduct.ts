@@ -1,18 +1,14 @@
-import {
-  CollectionQuery,
-  CollectionResult,
-  getCollection,
-} from "@/services/productsApi";
+import { getProduct } from "@/services/productsApi";
+import { Product } from "@/types/product";
 import { useEffect, useState } from "react";
 
-const EMPTY_RESULT: CollectionResult = {
-  products: [],
-  totalCount: 0,
-  priceBounds: { min: 0, max: 600000 },
-};
-
-export function useCollectionProducts(query: CollectionQuery) {
-  const [result, setResult] = useState<CollectionResult>(EMPTY_RESULT);
+/**
+ * Fetches one product by id for the product detail page. Same
+ * AbortController cancellation pattern as useCollectionProducts/
+ * useProductSection — see useCollectionProducts.ts for why.
+ */
+export function useProduct(id: string) {
+  const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
@@ -21,13 +17,12 @@ export function useCollectionProducts(query: CollectionQuery) {
     setLoading(true);
     setError(null);
 
-    getCollection(query, controller.signal)
+    getProduct(id, controller.signal)
       .then((data) => {
-        setResult(data);
+        setProduct(data);
       })
       .catch((err) => {
         if (err instanceof DOMException && err.name === "AbortError") return;
-
         setError(err instanceof Error ? err : new Error(String(err)));
       })
       .finally(() => {
@@ -37,13 +32,7 @@ export function useCollectionProducts(query: CollectionQuery) {
     return () => {
       controller.abort();
     };
-  }, [
-    query.slug,
-    query.minPrice,
-    query.maxPrice,
-    query.inStockOnly,
-    query.sortBy,
-  ]);
+  }, [id]);
 
-  return { ...result, loading, error };
+  return { product, loading, error };
 }

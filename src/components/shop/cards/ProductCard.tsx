@@ -1,7 +1,7 @@
 import { Brand } from "@/constants/theme";
 import { formatNaira } from "@/utils/currency";
 import { getCardVariant } from "@/utils/product";
-import { Image, StyleSheet, Text, View } from "react-native";
+import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 interface ProductCardProps {
   name: string;
@@ -13,6 +13,11 @@ interface ProductCardProps {
   category: string;
   colors?: string[];
   fullWidth?: boolean; // true = fill parent (grid), false = fixed width (horizontal scroll)
+  /** Called when the whole card is tapped — the caller decides what
+   * "tapped" means (usually navigating to the product detail page).
+   * ProductCard stays unaware of routing, same as onCheckout in
+   * CartDrawer or onLoginPress in MenuDrawer. */
+  onPress?: () => void;
 }
 
 const ProductCard = ({
@@ -25,12 +30,16 @@ const ProductCard = ({
   category,
   colors,
   fullWidth = false,
+  onPress,
 }: ProductCardProps) => {
   const variant = getCardVariant(category);
   const isLandscape = variant === "landscape";
 
   return (
-    <View
+    <TouchableOpacity
+      activeOpacity={0.85}
+      onPress={onPress}
+      disabled={!onPress}
       style={[styles.card, !fullWidth && { width: isLandscape ? 300 : 230 }]}
     >
       <View
@@ -75,7 +84,7 @@ const ProductCard = ({
           Available in {colors.length} color{colors.length > 1 ? "s" : ""}
         </Text>
       )}
-    </View>
+    </TouchableOpacity>
   );
 };
 

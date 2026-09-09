@@ -2,6 +2,7 @@ import ProductCard from "@/components/shop/cards/ProductCard";
 import ProductCardSkeleton from "@/components/shop/cards/ProductCardSkeleton";
 import AsyncBoundary from "@/components/shop/ui/AsyncBoundary";
 import { Brand } from "@/constants/theme";
+import { useGoToProduct } from "@/hooks/shops/useGoToProduct";
 import { useProductSection } from "@/hooks/shops/useProductSection";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 
@@ -32,6 +33,7 @@ const ProductSection = ({
     offset,
     limit,
   });
+  const goToProduct = useGoToProduct();
 
   // How many skeleton cards to show while loading — falls back to a
   // sensible default when no limit was given, so an unlimited section
@@ -88,6 +90,7 @@ const ProductSection = ({
               image={product.image}
               category={product.category}
               colors={product.colors}
+              onPress={() => goToProduct(product.id)}
             />
           ))}
         </ScrollView>

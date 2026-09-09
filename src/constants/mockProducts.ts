@@ -9,7 +9,7 @@ export const MOCK_PRODUCTS: Product[] = [
     onSale: true,
     category: "tshirts",
     gender: "unisex",
-    createdAt: "2026-08-10",
+    createdAt: "2026-08-26",
     image:
       "https://shopzipprepublic.com/cdn/shop/files/FillB-ZippProds.jpg?v=1732249012&width=770",
     colors: ["red", "blue"],
@@ -22,7 +22,7 @@ export const MOCK_PRODUCTS: Product[] = [
     onSale: true,
     category: "tshirts",
     gender: "unisex",
-    createdAt: "2025-11-20",
+    createdAt: "2026-11-20",
     image:
       "https://shopzipprepublic.com/cdn/shop/files/40_ee6d26fc-9f6a-4497-bc04-5c5a40a14941.jpg?v=1732249067&width=770",
   },
@@ -81,7 +81,7 @@ export const MOCK_PRODUCTS: Product[] = [
     onSale: true,
     category: "slides",
     gender: "men",
-    createdAt: "2026-08-14",
+    createdAt: "2026-08-26",
     image:
       "https://shopzipprepublic.com/cdn/shop/files/IMG_0002.jpg?v=1732606773&width=770",
   },

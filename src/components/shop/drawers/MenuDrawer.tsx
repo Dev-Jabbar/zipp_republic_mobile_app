@@ -1,6 +1,8 @@
 import { Brand } from "@/constants/theme";
+import { useIsAuthenticated } from "@/hooks/auth/useIsAuthenticated";
 import { useShopMenuItems } from "@/hooks/shops/useShopMenuItems";
 import { Ionicons } from "@expo/vector-icons";
+import { Href, router } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
   Animated,
@@ -25,6 +27,9 @@ export interface MenuItem {
 interface MenuDrawerProps {
   visible: boolean;
   onClose: () => void;
+  /** Only used when logged OUT — where "Login" should navigate to. When
+   * logged in, the row becomes "My Account" and navigates to /orders
+   * instead, so this prop isn't needed in that case. */
   onLoginPress?: () => void;
   /** Optional override — defaults to useShopMenuItems() if not provided. */
   items?: MenuItem[];
@@ -45,6 +50,12 @@ const MenuDrawer = ({
   // the result rather than replacing the hook call itself.
   const shopMenuItems = useShopMenuItems();
   const menuItems = items ?? shopMenuItems;
+
+  // A guest also has a truthy (anonymous) Firebase user now, so this
+  // must check isAuthenticated (!!user && !user.isAnonymous), not raw
+  // user truthiness — otherwise a logged-out guest still sees "My
+  // Account" here.
+  const isAuthenticated = useIsAuthenticated();
 
   const [activeSubmenu, setActiveSubmenu] = useState<MenuItem | null>(null);
   const slideAnim = useRef(new Animated.Value(0)).current; // 0 = root, 1 = submenu
@@ -78,6 +89,18 @@ const MenuDrawer = ({
       duration: SUBMENU_ANIM_DURATION,
       useNativeDriver: true,
     }).start(() => setActiveSubmenu(null));
+  };
+
+  // Logged in -> go to the account/orders screen (actual sign-out now
+  // lives there, not in the drawer). Logged out -> go to login, same as
+  // before.
+  const handleAuthRowPress = () => {
+    onClose();
+    if (isAuthenticated) {
+      router.push("/orders" as Href);
+    } else {
+      onLoginPress?.();
+    }
   };
 
   const translateX = slideAnim.interpolate({
@@ -147,13 +170,16 @@ const MenuDrawer = ({
 
       <TouchableOpacity
         style={[styles.loginRow, { paddingBottom: insets.bottom + 76 }]}
-        onPress={() => {
-          onClose();
-          onLoginPress?.();
-        }}
+        onPress={handleAuthRowPress}
       >
-        <Ionicons name="person-outline" size={16} color={Brand.text} />
-        <Text style={styles.loginText}>Login</Text>
+        <Ionicons
+          name={isAuthenticated ? "person-circle-outline" : "person-outline"}
+          size={16}
+          color={Brand.text}
+        />
+        <Text style={styles.loginText}>
+          {isAuthenticated ? "My Account" : "Login"}
+        </Text>
       </TouchableOpacity>
     </DrawerShell>
   );

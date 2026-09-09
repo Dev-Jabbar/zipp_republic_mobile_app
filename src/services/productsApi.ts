@@ -1,28 +1,73 @@
-import { MOCK_PRODUCTS } from "@/constants/mockProducts";
+import { db } from "@/services/firebase";
 import { Product } from "@/types/product";
-import { isNewArrival } from "@/utils/product";
+import { NEW_ARRIVAL_WINDOW_DAYS } from "@/utils/product";
+import {
+  collection,
+  DocumentData,
+  limit as fbLimit,
+  query as fsQuery,
+  getCountFromServer,
+  getDocs,
+  orderBy,
+  QueryConstraint,
+  QueryDocumentSnapshot,
+  where,
+} from "firebase/firestore";
 
 const GENDER_SLUGS = ["men", "women"];
 
-// Simulated network latency, so the loading/skeleton states are actually
-// visible during development instead of resolving in the same frame.
-// Delete this (and the `await simulateNetworkDelay()` calls below) once a
-// real fetch() replaces the bodies of getCollection/getProductSection —
-// a real network call already has its own latency.
-const MOCK_DELAY_MS = 700;
+const productsCollection = collection(db, "products");
 
-const simulateNetworkDelay = (signal?: AbortSignal) =>
-  new Promise<void>((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(new DOMException("Aborted", "AbortError"));
-      return;
-    }
-    const timeout = setTimeout(resolve, MOCK_DELAY_MS);
-    signal?.addEventListener("abort", () => {
-      clearTimeout(timeout);
-      reject(new DOMException("Aborted", "AbortError"));
-    });
-  });
+/**
+ * `signal` no longer cancels the network request itself — Firestore's SDK
+ * has no native AbortSignal support, so a request in flight will complete
+ * regardless of `signal.aborted`. This just discards a result that resolves
+ * after a newer request has superseded it, same contract the hooks already
+ * expect (throws AbortError, which useCollectionProducts/useProduct/etc
+ * already catch and ignore).
+ */
+const throwIfAborted = (signal?: AbortSignal) => {
+  if (signal?.aborted) {
+    throw new DOMException("Aborted", "AbortError");
+  }
+};
+
+/**
+ * Maps a Firestore doc to our Product type. Deliberately reads `id` from
+ * the document's DATA (the field we originally used as the mock id), not
+ * from `docSnap.id` (the Firestore document ID) — the products were
+ * entered manually in the console, so Firestore auto-generated the doc
+ * IDs rather than using our own id values as doc IDs. Every lookup in
+ * this file that needs "the product with id X" has to query the `id`
+ * field, not read/pass around the Firestore doc ID.
+ */
+const productFromDoc = (
+  docSnap: QueryDocumentSnapshot<DocumentData>,
+): Product => {
+  const data = docSnap.data();
+  return {
+    id: data.id,
+    name: data.name,
+    price: data.price,
+    originalPrice: data.originalPrice,
+    onSale: data.onSale,
+    category: data.category,
+    gender: data.gender,
+    createdAt: data.createdAt,
+    image: data.image,
+    colors: data.colors,
+    sizes: data.sizes,
+    // Kept for safety even though every current doc has this written
+    // explicitly (see project brief) — future manual/console additions
+    // could still omit it.
+    inStock: data.inStock ?? true,
+  };
+};
+
+const buildBaseConstraints = (slug: string): QueryConstraint[] =>
+  GENDER_SLUGS.includes(slug)
+    ? [where("gender", "==", slug)]
+    : [where("category", "==", slug)];
 
 export type SortOption =
   | "featured"
@@ -54,98 +99,104 @@ export interface CollectionResult {
 }
 
 /**
- * Single seam between the UI and product data. Every screen/hook talks
- * to THIS function — never to MOCK_PRODUCTS directly. When a real backend
- * exists, replace the body below with something like:
+ * Single seam between the UI and product data — now backed by Firestore.
+ * No screen, hook, or component needs to change; they only ever call
+ * getCollection(query) and read the CollectionResult shape, same as
+ * when this read from MOCK_PRODUCTS.
  *
- *   const res = await fetch(`/api/products?${new URLSearchParams({
- *     slug: query.slug,
- *     ...(query.minPrice != null && { minPrice: String(query.minPrice) }),
- *     ...(query.maxPrice != null && { maxPrice: String(query.maxPrice) }),
- *     ...(query.inStockOnly && { inStock: "true" }),
- *     ...(query.sortBy && { sort: query.sortBy }),
- *   })}`);
- *   return res.json();
- *
- * No screen, hook, or component needs to change — they only ever call
- * getCollection(query) and read the CollectionResult shape.
- *
- * `signal` is a standard AbortSignal — when a real fetch() replaces the
- * body below, pass it straight through: fetch(url, { signal }). For now
- * it's used to cancel the simulated delay if a newer request supersedes
- * this one before it resolves.
+ * Some filter/sort combinations below (e.g. category + price range +
+ * a sort) will need a Firestore composite index. Firestore's own error
+ * message includes a direct console link to auto-create it the first
+ * time an unsupported combo actually runs — not something to pre-build,
+ * just expect it while testing each collection/sort combo.
  */
 export async function getCollection(
   query: CollectionQuery,
   signal?: AbortSignal,
 ): Promise<CollectionResult> {
-  await simulateNetworkDelay(signal);
+  const baseConstraints = buildBaseConstraints(query.slug);
 
-  const base = GENDER_SLUGS.includes(query.slug)
-    ? MOCK_PRODUCTS.filter((p) => p.gender === query.slug)
-    : MOCK_PRODUCTS.filter((p) => p.category === query.slug);
+  // priceBounds and totalCount are deliberately computed against the
+  // BASE set only (gender/category split), ignoring price/stock filters
+  // currently applied — same contract as the mock version, so the
+  // slider's track and "X of Y" label don't shrink/jump as filters change.
+  const [minSnap, maxSnap, countSnap] = await Promise.all([
+    getDocs(
+      fsQuery(
+        productsCollection,
+        ...baseConstraints,
+        orderBy("price", "asc"),
+        fbLimit(1),
+      ),
+    ),
+    getDocs(
+      fsQuery(
+        productsCollection,
+        ...baseConstraints,
+        orderBy("price", "desc"),
+        fbLimit(1),
+      ),
+    ),
+    getCountFromServer(fsQuery(productsCollection, ...baseConstraints)),
+  ]);
+
+  throwIfAborted(signal);
 
   const priceBounds =
-    base.length === 0
+    minSnap.empty || maxSnap.empty
       ? { min: 0, max: 600000 }
       : {
-          min: Math.floor(Math.min(...base.map((p) => p.price))),
-          max: Math.ceil(Math.max(...base.map((p) => p.price))),
+          min: Math.floor(minSnap.docs[0].data().price),
+          max: Math.ceil(maxSnap.docs[0].data().price),
         };
 
-  let result = base;
+  const totalCount = countSnap.data().count;
+
+  const constraints: QueryConstraint[] = [...baseConstraints];
 
   if (query.minPrice !== undefined) {
-    result = result.filter((p) => p.price >= query.minPrice!);
+    constraints.push(where("price", ">=", query.minPrice));
   }
   if (query.maxPrice !== undefined) {
-    result = result.filter((p) => p.price <= query.maxPrice!);
+    constraints.push(where("price", "<=", query.maxPrice));
   }
-
-  // Product now has an optional inStock field (types/product.ts). Treat
-  // a missing field as "in stock" (true) so existing mock items without
-  // it don't get filtered out by accident.
   if (query.inStockOnly) {
-    result = result.filter((p) => p.inStock !== false);
+    constraints.push(where("inStock", "==", true));
   }
 
   switch (query.sortBy) {
-    case "az":
-      result = [...result].sort((a, b) => a.name.localeCompare(b.name));
-      break;
-    case "za":
-      result = [...result].sort((a, b) => b.name.localeCompare(a.name));
-      break;
     case "price_low_high":
-      result = [...result].sort((a, b) => a.price - b.price);
+      constraints.push(orderBy("price", "asc"));
       break;
     case "price_high_low":
-      result = [...result].sort((a, b) => b.price - a.price);
+      constraints.push(orderBy("price", "desc"));
       break;
     case "date_new_old":
-      result = [...result].sort(
-        (a, b) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-      );
+      constraints.push(orderBy("createdAt", "desc"));
       break;
     case "date_old_new":
-      result = [...result].sort(
-        (a, b) =>
-          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
-      );
+      constraints.push(orderBy("createdAt", "asc"));
       break;
-    // "featured", "most_relevant", "best_selling" need real backend
-    // signals (curation order, sales counts) mock data doesn't have —
-    // left as the base collection order until there's a real API.
+    // "az"/"za" need locale-aware string sort (localeCompare) that
+    // Firestore's orderBy can't do natively — sorted client-side below,
+    // same as "featured"/"most_relevant"/"best_selling" which still have
+    // no real backend signal (curation order, sales counts) to sort by.
     default:
       break;
   }
 
-  return {
-    products: result,
-    totalCount: base.length,
-    priceBounds,
-  };
+  const snap = await getDocs(fsQuery(productsCollection, ...constraints));
+  throwIfAborted(signal);
+
+  let products = snap.docs.map(productFromDoc);
+
+  if (query.sortBy === "az") {
+    products = [...products].sort((a, b) => a.name.localeCompare(b.name));
+  } else if (query.sortBy === "za") {
+    products = [...products].sort((a, b) => b.name.localeCompare(a.name));
+  }
+
+  return { products, totalCount, priceBounds };
 }
 
 export interface ProductSectionQuery {
@@ -157,23 +208,111 @@ export interface ProductSectionQuery {
 
 /**
  * Same seam concept as getCollection, for the smaller horizontal-carousel
- * use case (home screen "New Arrivals", category rows, etc). Kept as a
- * separate function since its query shape (category OR new-arrivals,
- * offset/limit) doesn't match CollectionQuery's slug-based routing — but
- * when a real backend exists, this becomes a fetch() the same way.
+ * use case (home screen "New Arrivals", category rows, etc).
+ *
+ * "New arrivals" used to be `MOCK_PRODUCTS.filter(isNewArrival)` computed
+ * entirely in JS. That relative-time check (createdAt within the last N
+ * days) translates to a Firestore range query since createdAt is stored
+ * as a plain "YYYY-MM-DD" string and those sort correctly lexicographically:
+ * where("createdAt", ">=", cutoffDateString). NEW_ARRIVAL_WINDOW_DAYS is
+ * imported from utils/product.ts so the window stays in sync with
+ * isNewArrival's own definition in one place.
  */
 export async function getProductSection(
   query: ProductSectionQuery,
   signal?: AbortSignal,
 ): Promise<Product[]> {
-  await simulateNetworkDelay(signal);
+  const constraints: QueryConstraint[] = [];
 
-  const filtered = query.isNewArrivals
-    ? MOCK_PRODUCTS.filter(isNewArrival)
-    : MOCK_PRODUCTS.filter((p) => p.category === query.category);
+  if (query.isNewArrivals) {
+    const cutoff = new Date(
+      Date.now() - NEW_ARRIVAL_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+    )
+      .toISOString()
+      .split("T")[0]; // "YYYY-MM-DD", matching the stored createdAt format
+    constraints.push(
+      where("createdAt", ">=", cutoff),
+      orderBy("createdAt", "desc"),
+    );
+  } else if (query.category) {
+    constraints.push(where("category", "==", query.category));
+  }
 
   const offset = query.offset ?? 0;
+  // Firestore has no native offset — pull a window big enough to cover
+  // offset+limit and slice client-side, same end result as the mock's
+  // array slice. Fine at this collection's size; would need a real
+  // startAfter() cursor if the catalog grows much larger.
+  if (query.limit !== undefined) {
+    constraints.push(fbLimit(offset + query.limit));
+  }
+
+  const snap = await getDocs(fsQuery(productsCollection, ...constraints));
+  throwIfAborted(signal);
+
+  const products = snap.docs.map(productFromDoc);
+
   return query.limit
-    ? filtered.slice(offset, offset + query.limit)
-    : filtered.slice(offset);
+    ? products.slice(offset, offset + query.limit)
+    : products.slice(offset);
+}
+
+/**
+ * Fetches a single product by id — the product detail page's main data
+ * source. Returns null (not an error) if no product matches, so the
+ * screen can render a clean "not found" state instead of an error state.
+ *
+ * This is a QUERY (where "id" == id), not a doc(db, "products", id)
+ * lookup, because the Firestore document IDs are auto-generated and no
+ * longer match our own `id` field (see productFromDoc's comment above).
+ */
+export async function getProduct(
+  id: string,
+  signal?: AbortSignal,
+): Promise<Product | null> {
+  const snap = await getDocs(
+    fsQuery(productsCollection, where("id", "==", id), fbLimit(1)),
+  );
+  throwIfAborted(signal);
+
+  if (snap.empty) return null;
+  return productFromDoc(snap.docs[0]);
+}
+
+export async function getRelatedProducts(
+  product: Product,
+  limit = 6,
+  signal?: AbortSignal,
+): Promise<Product[]> {
+  // Fetch one extra so excluding the current product still leaves up to
+  // `limit` results, same as the mock's filter-then-slice behavior.
+  const snap = await getDocs(
+    fsQuery(
+      productsCollection,
+      where("category", "==", product.category),
+      fbLimit(limit + 1),
+    ),
+  );
+  throwIfAborted(signal);
+
+  return snap.docs
+    .map(productFromDoc)
+    .filter((p) => p.id !== product.id)
+    .slice(0, limit);
+}
+
+export async function searchProducts(
+  query: string,
+  signal?: AbortSignal,
+): Promise<Product[]> {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+
+  const snap = await getDocs(productsCollection);
+  throwIfAborted(signal);
+
+  const lower = trimmed.toLowerCase();
+  return snap.docs
+    .map(productFromDoc)
+    .filter((p) => p.name.toLowerCase().includes(lower));
 }

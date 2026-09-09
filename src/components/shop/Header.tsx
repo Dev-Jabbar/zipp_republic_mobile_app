@@ -1,6 +1,9 @@
+// Destination: src/components/shop/Header.tsx
+
 import { Brand } from "@/constants/theme";
 import { useCartStore } from "@/store/useCartStore";
 import { Ionicons } from "@expo/vector-icons";
+import { Href, router, usePathname } from "expo-router";
 import { useEffect, useRef } from "react";
 import {
   Animated,
@@ -25,6 +28,7 @@ const Header = ({
   onCartPress,
 }: HeaderProps) => {
   const cartCount = useCartStore((s) => s.getTotalCount());
+  const pathname = usePathname();
   const morph = useRef(new Animated.Value(isMenuOpen ? 1 : 0)).current;
 
   useEffect(() => {
@@ -63,10 +67,26 @@ const Header = ({
         </View>
       </TouchableOpacity>
 
-      <View style={styles.logoWrapper}>
-        <Text style={styles.logoInitials}>ZR</Text>
-        <Text style={styles.logoText}>ZIPP{"\n"}REPUBLIC</Text>
-      </View>
+      {/* Tapping the logo resets the stack back to home — dismissAll()
+          pops every pushed screen down to the root before navigating,
+          rather than router.push("/") which would just stack another
+          home screen on top (so back would replay Product -> Collection
+          -> Home instead of leaving the app). Skipped entirely when
+          already on "/" — nothing to reset. */}
+      <TouchableOpacity
+        onPress={() => {
+          if (pathname !== "/") {
+            router.dismissAll();
+            router.replace("/" as Href);
+          }
+        }}
+        hitSlop={8}
+      >
+        <View style={styles.logoWrapper}>
+          <Text style={styles.logoInitials}>ZR</Text>
+          <Text style={styles.logoText}>ZIPP{"\n"}REPUBLIC</Text>
+        </View>
+      </TouchableOpacity>
 
       <View style={styles.rightIcons}>
         <TouchableOpacity

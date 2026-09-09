@@ -1,5 +1,7 @@
+import { initializeAuthListener } from "@/hooks/auth/useIsAuthenticated";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import { useEffect } from "react";
 import { StyleSheet, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import {
@@ -27,12 +29,12 @@ const RootLayoutContent = () => {
 };
 
 const RootLayout = () => {
+  useEffect(() => {
+    const unsubscribe = initializeAuthListener();
+    return unsubscribe;
+  }, []);
+
   return (
-    // GestureHandlerRootView MUST be the outermost wrapper (above
-    // SafeAreaProvider), or every gesture-handler-based component
-    // (this slider, swipeables, native-stack transitions, etc.) will
-    // render fine but silently ignore all touches — no error, no
-    // warning, gestures just do nothing.
     <GestureHandlerRootView style={styles.container}>
       <SafeAreaProvider>
         <RootLayoutContent />

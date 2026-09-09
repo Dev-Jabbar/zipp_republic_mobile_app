@@ -1,3 +1,5 @@
+// Destination: src/components/shop/drawers/DrawerShell.tsx
+
 import { Brand } from "@/constants/theme";
 import { ReactNode } from "react";
 import { Dimensions, StyleSheet, View, ViewStyle } from "react-native";
@@ -19,6 +21,18 @@ interface DrawerShellProps {
   noTopSafeArea?: boolean;
   /** Fires once the entrance animation has actually finished — use this instead of a guessed setTimeout for things like autofocusing an input. */
   onShow?: () => void;
+  /**
+   * Whether swipe-to-close is enabled. Defaults to true. Set false for
+   * panels with meaningful vertical scroll content (e.g. CartDrawer) —
+   * react-native-modal's swipe gesture recognizer has to evaluate every
+   * touch to decide if it's a horizontal swipe-to-close BEFORE handing
+   * control to an inner ScrollView, even with propagateSwipe on. That
+   * evaluation is a real, perceptible delay at the start of every scroll
+   * gesture. Turning swipe off entirely removes the competing
+   * recognizer, so scrolling has nothing to arbitrate against. The X
+   * button + backdrop tap still close the drawer either way.
+   */
+  swipeToClose?: boolean;
 }
 
 const DrawerShell = ({
@@ -29,6 +43,7 @@ const DrawerShell = ({
   width,
   noTopSafeArea = false,
   onShow,
+  swipeToClose = true,
 }: DrawerShellProps) => {
   const insets = useSafeAreaInsets();
   const isUp = direction === "up";
@@ -52,9 +67,9 @@ const DrawerShell = ({
     <RNModal
       isVisible={visible}
       onBackdropPress={onClose}
-      onSwipeComplete={onClose}
+      onSwipeComplete={swipeToClose ? onClose : undefined}
       onModalShow={onShow}
-      swipeDirection={isUp ? "down" : "right"}
+      swipeDirection={swipeToClose ? (isUp ? "down" : "right") : undefined}
       propagateSwipe
       animationIn={isUp ? "slideInUp" : "slideInRight"}
       animationOut={isUp ? "slideOutDown" : "slideOutRight"}
@@ -99,6 +114,15 @@ const styles = StyleSheet.create({
 
   gestureRootRight: {
     alignSelf: "flex-end",
+    // BUG FIX: this had no height/flex at all, so its child (panelStyle,
+    // height: "100%") was 100% of an undefined-height parent. React
+    // Native's flexbox then sizes the whole tree to fit its CONTENT
+    // instead of clipping it to the screen — which is why the inner
+    // ScrollView (in CartDrawer etc) worked fine with few items but
+    // silently stopped scrolling/clipping once content grew past the
+    // visible screen height. gestureRootUp already had this right
+    // (flex: 1) — this brings the "right" variant in line with it.
+    height: "100%",
   },
   gestureRootUp: {
     alignSelf: "stretch",
